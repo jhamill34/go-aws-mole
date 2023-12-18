@@ -20,6 +20,8 @@ type EC2BastionService struct {
 	ec2Client       *ec2.Client
 	instanceConnect *ec2instanceconnect.Client
 	filters         []ec2Types.Filter
+
+	key string
 }
 
 func NewEC2BastionService(
@@ -63,6 +65,11 @@ func (self *EC2BastionService) PushKey(
 	bastion *tunnels.BastionEntity,
 	pub string,
 ) error {
+	if (pub == self.key) {
+		log.Printf("Key already pushed to bastion %s", bastion.Id)
+		return nil
+	}
+
 	log.Printf("Pushing key to bastion %s", bastion.Id)
 	_, err := self.instanceConnect.SendSSHPublicKey(ctx, &ec2instanceconnect.SendSSHPublicKeyInput{
 		InstanceId:     &bastion.Id,
@@ -72,6 +79,8 @@ func (self *EC2BastionService) PushKey(
 	if err != nil {
 		return err
 	}
+
+	self.key = pub
 
 	return nil
 }

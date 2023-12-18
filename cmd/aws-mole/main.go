@@ -5,20 +5,21 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/ec2instanceconnect"
-	"github.com/aws/aws-sdk-go-v2/service/rds"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/ec2instanceconnect"
+	"github.com/aws/aws-sdk-go-v2/service/elasticsearchservice"
+	"github.com/aws/aws-sdk-go-v2/service/rds"
 	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	localConfig "github.com/jhamill34/go-aws-mole/pkg/config"
 	"github.com/jhamill34/go-aws-mole/pkg/providers/bastion"
-	credential_provider "github.com/jhamill34/go-aws-mole/pkg/providers/credentials"
+	"github.com/jhamill34/go-aws-mole/pkg/providers/credentials"
 	"github.com/jhamill34/go-aws-mole/pkg/providers/endpoint"
 	"github.com/jhamill34/go-mole/pkg/providers"
 	"github.com/jhamill34/go-mole/pkg/runner"
@@ -38,7 +39,17 @@ func main() {
 		close(ch)
 	}()
 
-	ConfigureBackgroundTunnel(os.Args[1]).Start(ctx, ch)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func () {
+		defer wg.Done()
+		ConfigureBackgroundTunnel(os.Args[1]).Start(ctx, ch)
+	}()
+
+	<-ch
+
+	wg.Wait()
 }
 
 type BackgroundTunnel struct {
@@ -53,29 +64,84 @@ func ConfigureBackgroundTunnel(configPath string) *BackgroundTunnel {
 		panic(err)
 	}
 
-	roleConfig := roleConfig(cfg.Aws)
+	roleConfig := credentials.AssumeRole(cfg.Aws)
+	ec2Client := ec2.NewFromConfig(roleConfig)
+	ec2InstanceConnect := ec2instanceconnect.NewFromConfig(roleConfig)
+	rdsClient := rds.NewFromConfig(roleConfig)
+	esClient := elasticsearchservice.NewFromConfig(roleConfig)
 
-	var tunnels []runner.Tunneler
-
-	if cfg.ElasticSearch != nil {
-		tunnels = append(
-			tunnels,
-			createSocksTunnel(roleConfig, cfg.ElasticSearch.Tunnel.Port, cfg.Ec2.Filters),
-		)
+	var bastionService tunnels.BastionService
+	var parts []string
+	parts = strings.Split(cfg.Bastion.Host.Ref, "/")
+	parts = parts[1:]
+	if parts[0] != "providers" {
+		panic("Invalid bastion host reference")
 	}
 
-	if cfg.Rds != nil {
-		tunnels = append(
-			tunnels,
-			createRdsSshTunnel(roleConfig, cfg.Rds.Tunnel.Port, cfg.Ec2.Filters, cfg.Rds.Filters),
+	if parts[1] == "ec2" {
+		bastionService = bastion.NewEC2BastionService(
+			ec2Client,
+			ec2InstanceConnect,
+			createEc2Filters(cfg.Providers.Ec2[parts[2]].Filters),
 		)
+	} else {
+		panic("Invalid bastion host reference")
 	}
+
+	var keyProvider tunnels.KeyProvider
+	parts = strings.Split(cfg.Bastion.Key.Ref, "/")
+	parts = parts[1:]
+	if parts[0] != "providers" {
+		panic("Invalid bastion key reference")
+	}
+
+	if parts[1] == "onetime" {
+		keyProvider = providers.NewStaticKeyProvider()
+	} else {
+		panic("Invalid bastion key reference")
+	}
+
+	tunnelers := make([]runner.Tunneler, 0, len(cfg.SshTunnel))
+	for _, tunnel := range cfg.SshTunnel {
+		parts = strings.Split(tunnel.Destination.Ref, "/")
+		parts = parts[1:]
+		if parts[0] != "providers" {
+			panic("Invalid ssh tunnel destination reference")
+		}
+
+		var endpointProvider tunnels.EndpointProvider
+		if parts[1] == "rds" {
+			endpointProvider = endpoint.NewRdsDatabaseInfoService(
+				rdsClient,
+				createRdsFilters(cfg.Providers.Rds[parts[2]].Filters),
+			)
+		} else if (parts[1] == "elasticsearch") {
+			endpointProvider = endpoint.NewESInfoService(
+				esClient,
+				cfg.Providers.ElasticSearch[parts[2]].DomainName,
+			)
+		} else {
+			panic("Invalid ssh tunnel destination reference")
+		}
+		tunnelers = append(tunnelers, tunnels.NewSshTunnel(
+			bastionService,
+			keyProvider,
+			endpointProvider,
+			tunnel.Port,
+		))
+	}
+
+	tunnelers = append(tunnelers, tunnels.NewSocksTunnel(
+		bastionService,
+		keyProvider,
+		cfg.SocksProxy.Port,
+	))
 
 	return &BackgroundTunnel{
 		mole: runner.NewMole(
-			tunnels...,
+			tunnelers...
 		),
-	}
+	}	
 }
 
 func (self *BackgroundTunnel) Start(ctx context.Context, sig chan struct{}) {
@@ -87,84 +153,6 @@ func (self *BackgroundTunnel) Start(ctx context.Context, sig chan struct{}) {
 	log.Println("Received signal, shutting down")
 
 	self.mole.Stop()
-}
-
-func roleConfig(cfg localConfig.AwsConfig) aws.Config {
-	ctx := context.Background()
-
-	defaultConfig, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.Region))
-	if err != nil {
-		panic(err)
-	}
-
-	stsConfig := sts.NewFromConfig(defaultConfig)
-	roleCredentialProvider := credential_provider.NewRoleCredentialProvider(
-		stsConfig,
-		cfg,
-		"dashboard",
-	)
-
-	roleConfig, err := config.LoadDefaultConfig(
-		ctx,
-		config.WithRegion(cfg.Region),
-		config.WithCredentialsProvider(roleCredentialProvider),
-	)
-
-	if err != nil {
-		panic(err)
-	}
-
-	return roleConfig
-}
-
-func createSocksTunnel(
-	roleConfig aws.Config,
-	localPort int,
-	ec2Filter []localConfig.KeyValue,
-) *tunnels.SocksTunnel {
-	ec2Client := ec2.NewFromConfig(roleConfig)
-
-	instanceConnect := ec2instanceconnect.NewFromConfig(roleConfig)
-	bastionService := bastion.NewEC2BastionService(
-		ec2Client,
-		instanceConnect,
-		createEc2Filters(ec2Filter),
-	)
-
-	return tunnels.NewSocksTunnel(
-		bastionService,
-		providers.NewStaticKeyProvider(),
-		localPort,
-	)
-}
-
-func createRdsSshTunnel(
-	roleConfig aws.Config,
-	localPort int,
-	ec2Filter []localConfig.KeyValue,
-	rdsFilter []localConfig.KeyValue,
-) *tunnels.SshTunnel {
-	ec2Client := ec2.NewFromConfig(roleConfig)
-
-	instanceConnect := ec2instanceconnect.NewFromConfig(roleConfig)
-	bastionService := bastion.NewEC2BastionService(
-		ec2Client,
-		instanceConnect,
-		createEc2Filters(ec2Filter),
-	)
-
-	rdsClient := rds.NewFromConfig(roleConfig)
-
-	databaseInfoService := endpoint.NewRdsDatabaseInfoService(
-		rdsClient,
-		createRdsFilters(rdsFilter),
-	)
-	return tunnels.NewSshTunnel(
-		bastionService,
-		providers.NewStaticKeyProvider(),
-		databaseInfoService,
-		localPort,
-	)
 }
 
 func createRdsFilters(filters []localConfig.KeyValue) []rdsTypes.Filter {

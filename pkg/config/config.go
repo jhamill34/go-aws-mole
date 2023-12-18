@@ -13,35 +13,57 @@ type AwsConfig struct {
 	Region      string `yaml:"region"`
 }
 
+type Reference struct {
+	Ref string `yaml:"$ref"`
+}
+
 type KeyValue struct {
 	Key   string   `yaml:"key"`
 	Value []string `yaml:"value"`
 }
 
-type TunnelConfig struct {
-	Host string `yaml:"host"`
-	Port int    `yaml:"port"`
+type BastionConfig struct {
+	Host Reference `yaml:"host"`
+	Key  Reference `yaml:"key"`
 }
 
-type RdsConfig struct {
-	Tunnel  TunnelConfig `yaml:"tunnel"`
-	Filters []KeyValue   `yaml:"filters"`
+type SshTunnelConfig struct {
+	Destination Reference `yaml:"destination"`
+	Port        int       `yaml:"port"`
+}
+
+type SocksConfig struct {
+	Allowlist []Reference `yaml:"allowlist"`
+	Port      int         `yaml:"port"`
 }
 
 type ElasticSearchConfig struct {
-	Tunnel     TunnelConfig `yaml:"tunnel"`
-	DomainName string       `yaml:"domain_name"`
+	DomainName string `yaml:"domain_name"`
+}
+
+type RdsConfig struct {
+	Filters []KeyValue `yaml:"filters"`
 }
 
 type Ec2Config struct {
 	Filters []KeyValue `yaml:"filters"`
 }
 
+type OnetimeConfig struct{}
+
+type ProvidersConfig struct {
+	ElasticSearch map[string]ElasticSearchConfig `yaml:"elasticsearch"`
+	Rds           map[string]RdsConfig           `yaml:"rds"`
+	Ec2           map[string]Ec2Config           `yaml:"ec2"`
+	Onetime       map[string]OnetimeConfig       `yaml:"onetime"`
+}
+
 type RootTunnelConfig struct {
-	Aws           AwsConfig            `yaml:"aws"`
-	Ec2           Ec2Config            `yaml:"ec2"`
-	Rds           *RdsConfig           `yaml:"rds"`
-	ElasticSearch *ElasticSearchConfig `yaml:"elasticsearch"`
+	Aws        AwsConfig         `yaml:"aws"`
+	Bastion    BastionConfig     `yaml:"bastion"`
+	SshTunnel  []SshTunnelConfig `yaml:"ssh_tunnel"`
+	SocksProxy SocksConfig       `yaml:"socks_proxy"`
+	Providers  ProvidersConfig   `yaml:"providers"`
 }
 
 func LoadTunnelConfig(path string) (*RootTunnelConfig, error) {
