@@ -41,6 +41,8 @@ github.com/jhamill34/go-mole v0.1.2 h1:LcVmY9aI9vzYDIMSJlO26tq0XxhS2mlaZF4vcR7Ac
 github.com/jhamill34/go-mole v0.1.2/go.mod h1:q/arFVt1fQmgZHZorcZezqWTK0KqfxGkPe6pi6uD/x4=
 github.com/jhamill34/go-mole v0.1.3 h1:Bijmom/u8PN1VSmggRIuIKalfAzwj6avlLttthUIG7k=
 github.com/jhamill34/go-mole v0.1.3/go.mod h1:q/arFVt1fQmgZHZorcZezqWTK0KqfxGkPe6pi6uD/x4=
+github.com/jhamill34/go-mole v0.1.4 h1:BcDsAN2YVbOqkBhlM2OMzHmx3/aEj8CuBkqt9sz1IlU=
+github.com/jhamill34/go-mole v0.1.4/go.mod h1:q/arFVt1fQmgZHZorcZezqWTK0KqfxGkPe6pi6uD/x4=
 github.com/jmespath/go-jmespath v0.4.0 h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9YPoQUg=
 github.com/jmespath/go-jmespath v0.4.0/go.mod h1:T8mJZnbsbmF+m6zOOFylbeCJqk5+pHWvzYPziyZiYoo=
 github.com/jmespath/go-jmespath/internal/testify v1.5.1/go.mod h1:L3OGu8Wl2/fWfCI6z80xFu9LTZmf1ZRjMHUOPmWr69U=

@@ -1,16 +1,15 @@
-package endpoint 
+package endpoint
 
 import (
 	"context"
 	"errors"
-	"log"
 
 	"github.com/aws/aws-sdk-go-v2/service/elasticsearchservice"
 	"github.com/jhamill34/go-mole/pkg/tunnels"
 )
 
 type ESVPCInfoService struct {
-	esClient *elasticsearchservice.Client
+	esClient   *elasticsearchservice.Client
 	domainName string
 }
 
@@ -50,12 +49,9 @@ func (self *ESVPCInfoService) GetEndpoint(ctx context.Context) (*tunnels.Endpoin
 		return nil, errors.New("Could not find vpc endpoint")
 	}
 
-	log.Println("Endpoint: ", ksEndpoint)
-
 	return &tunnels.EndpointInfo{
 		Protocol: "https",
 		Host:     ksEndpoint,
 		Port:     443,
 	}, nil
 }
-
