@@ -8,18 +8,17 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/jhamill34/go-aws-mole/pkg/config"
 )
 
 type RoleCredentialProvider struct {
 	stsClient     *sts.Client
-	awsConfig     config.AwsConfig
+	awsConfig     AwsConfig
 	sessionPrefix string
 }
 
 func NewRoleCredentialProvider(
 	stsClient *sts.Client,
-	awsConfig config.AwsConfig,
+	awsConfig AwsConfig,
 	sessionPrefix string,
 ) *RoleCredentialProvider {
 	return &RoleCredentialProvider{
