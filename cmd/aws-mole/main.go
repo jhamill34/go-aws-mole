@@ -131,35 +131,9 @@ func ConfigureBackgroundTunnel(configPath string) *BackgroundTunnel {
 		))
 	}
 
-	allowList := make([]tunnels.EndpointProvider, 0, len(cfg.SocksProxy.Allowlist))
-	for _, allow := range cfg.SocksProxy.Allowlist {
-		parts = strings.Split(allow.Ref, "/")
-		parts = parts[1:]
-		if parts[0] != "providers" {
-			panic("Invalid socks proxy allowlist reference")
-		}
-
-		var endpointProvider tunnels.EndpointProvider
-		if parts[1] == "rds" {
-			endpointProvider = endpoint.NewRdsDatabaseInfoService(
-				rdsClient,
-				createRdsFilters(cfg.Providers.Rds[parts[2]].Filters),
-			)
-		} else if parts[1] == "elasticsearch" {
-			endpointProvider = endpoint.NewESInfoService(
-				esClient,
-				cfg.Providers.ElasticSearch[parts[2]].DomainName,
-			)
-		} else {
-			panic("Invalid socks proxy allowlist reference")
-		}
-		allowList = append(allowList, endpointProvider)
-	}
-
 	tunnelers = append(tunnelers, tunnels.NewSocksTunnel(
 		bastionService,
 		keyProvider,
-		allowList,
 		cfg.SocksProxy.Port,
 	))
 
